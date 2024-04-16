@@ -2,11 +2,13 @@
 
 namespace App\Http\Controllers\API;
 
-use App\Helpers\Response;
-use App\Http\Controllers\Controller;
-use App\Models\Product;
 use Exception;
+use App\Models\Product;
+use App\Helpers\Response;
 use Illuminate\Http\Request;
+use App\Http\Controllers\Controller;
+use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\Validator;
 
 class ProductController extends Controller
 {
@@ -17,8 +19,13 @@ class ProductController extends Controller
      */
     public function index()
     {
-        $data = Product::all();
+        $data = Product::latest()->get();
 
+        foreach($data as $item){
+            $idEncrypt = Crypt::encrypt($item->id);
+            $item['id_encrypt'] = $idEncrypt;
+        }
+       
         if($data){
             return Response::success($data);
         }
@@ -45,27 +52,27 @@ class ProductController extends Controller
      */
     public function store(Request $request)
     {
-        try{
-            $request->validate([
+        try {
+            $validator = Validator::make($request->all(), [
                 'nama' => 'required',
                 'price' => 'required',
             ]);
 
+            if ($validator->fails()) {
+                return Response::validationError($validator->errors());
+            }
+
             $product = Product::create([
-                'nama'=>$request->nama,
-                'price'=>$request->price,
+                'nama' => $request->nama,
+                'price' => $request->price,
             ]);
 
-            $data = Product::where('id','=',$product->id)->get();
-
-            if($data){
-                return Response::success($data);
-            }
-            else{
+            if ($product) {
+                return Response::success($product, 200, 'Produk berhasil dibuat');
+            } else {
                 return Response::error();
             }
-        }
-        catch (Exception $error){
+        } catch (Exception $error) {
             return Response::error();
         }
     }
@@ -73,17 +80,24 @@ class ProductController extends Controller
     /**
      * Display the specified resource.
      *
-     * @param  int  $id
+     * @param  int  $code
      * @return \Illuminate\Http\Response
      */
-    public function show($id)
+    public function show($code)
     {
-        $data = Product::where('id','=',$id)->get();
+        try{
+            $code = Crypt::decrypt($code);
+            if(!$code){
+                return Response::error(null, 400, 'ID tidak ditemukan');
+            }
 
-        if($data){
-            return Response::success($data);
-        }
-        else{
+            $data = Product::where('id','=',$code)->first();
+            if($data){
+                return Response::success($data, 200, 'Berhasil fecthing data');
+            }else{
+                return Response::error(null, 400, 'Data tidak ditemukan');
+            }
+        } catch (Exception $error) {
             return Response::error();
         }
     }
@@ -91,10 +105,10 @@ class ProductController extends Controller
     /**
      * Show the form for editing the specified resource.
      *
-     * @param  int  $id
+     * @param  int  $code
      * @return \Illuminate\Http\Response
      */
-    public function edit($id)
+    public function edit($code)
     {
         //
     }
@@ -103,34 +117,33 @@ class ProductController extends Controller
      * Update the specified resource in storage.
      *
      * @param  \Illuminate\Http\Request  $request
-     * @param  int  $id
+     * @param  int  $code
      * @return \Illuminate\Http\Response
      */
-    public function update(Request $request, $id)
+    public function update(Request $request, $code)
     {
-        try{
-            $request->validate([
+        try {
+            $validator = Validator::make($request->all(), [
                 'nama' => 'required',
                 'price' => 'required',
             ]);
 
-            $product = Product::findOrFail($id);
+            if ($validator->fails()) {
+                return Response::validationError($validator->errors());
+            }
 
-            $product->update([
-                'nama'=>$request->nama,
-                'price'=>$request->price,
+            $product = Product::where('id',$code)
+            ->update([
+                'nama' => $request->nama,
+                'price' => $request->price,
             ]);
-
-            $data = Product::where('id','=',$product->id)->get();
-
-            if($data){
-                return Response::success($data);
+            
+            if ($product > 0) {
+                return Response::success(null, 200, 'Data berhasil diupdate');
+            }else{
+                return Response::error(null, 400, 'Data tidak terupdate');
             }
-            else{
-                return Response::error();
-            }
-        }
-        catch (Exception $error){
+        } catch (Exception $error) {
             return Response::error();
         }
     }
@@ -138,26 +151,27 @@ class ProductController extends Controller
     /**
      * Remove the specified resource from storage.
      *
-     * @param  int  $id
+     * @param  int  $code
      * @return \Illuminate\Http\Response
      */
-    public function destroy($id)
+    public function destroy($code)
     {
-        try{$product = Product::findOrFail($id);
+        try{
+            $code = Crypt::decrypt($code);
+            if(!$code){
+                return Response::error(null, 400, 'ID tidak ditemukan');
+            }
+            $product = Product::findOrFail($code);
 
-        $data = $product->delete();
-
-        $data = Product::all();
-
-        if($data){
-            return Response::success($data='Null');
+            if($product){
+                $product->delete();
+                return Response::success(null);
+            }else{
+                return Response::error(null, 400, 'Data tidak ditemukan');
+            }
         }
-        else{
+        catch(Exception $error){
             return Response::error();
         }
-    }
-    catch(Exception $error){
-        return Response::error();
-    }
     }
 }
